@@ -2,14 +2,41 @@ package main
 
 import (
 	"context"
-	"log/slog"
-	"net"
-
 	"github.com/google/uuid"
-	pb "github.com/scarymovie/logger-demo/cmd/grpc-server/proto"
+	pb "github.com/scarymovie/logger-demo/grpc-server/proto"
 	"github.com/scarymovie/logger/slogx"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+	"log/slog"
+	"net"
 )
+
+func main() {
+	slogx.MustConfigure(slogx.Config{
+		Format:       "json",
+		Level:        slog.LevelDebug,
+		AddSource:    true,
+		DefaultAttrs: []slog.Attr{slogx.String("service", "grpc-greeter")},
+	})
+
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(loggingInterceptor),
+	)
+
+	pb.RegisterGreeterServer(grpcServer, &greeterServer{})
+	reflection.Register(grpcServer)
+
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		slogx.Error(context.Background(), "failed to listen", slogx.String("error", err.Error()))
+		return
+	}
+
+	slogx.Info(context.Background(), "gRPC server starting", slogx.String("addr", ":50051"))
+	if err := grpcServer.Serve(lis); err != nil {
+		slogx.Error(context.Background(), "server failed", slogx.String("error", err.Error()))
+	}
+}
 
 func loggingInterceptor(
 	ctx context.Context,
@@ -30,30 +57,4 @@ func loggingInterceptor(
 
 	slogx.Info(ctx, "gRPC request completed")
 	return resp, nil
-}
-
-func main() {
-	slogx.MustConfigure(slogx.Config{
-		Format:       "json",
-		Level:        slog.LevelDebug,
-		AddSource:    true,
-		DefaultAttrs: []slog.Attr{slogx.String("service", "grpc-greeter")},
-	})
-
-	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(loggingInterceptor),
-	)
-
-	pb.RegisterGreeterServer(grpcServer, &greeterServer{})
-
-	lis, err := net.Listen("tcp", ":50051")
-	if err != nil {
-		slogx.Error(context.Background(), "failed to listen", slogx.String("error", err.Error()))
-		return
-	}
-
-	slogx.Info(context.Background(), "gRPC server starting", slogx.String("addr", ":50051"))
-	if err := grpcServer.Serve(lis); err != nil {
-		slogx.Error(context.Background(), "server failed", slogx.String("error", err.Error()))
-	}
 }
